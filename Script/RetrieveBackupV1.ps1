@@ -631,13 +631,7 @@ Function LoadData {
     return $myList
 }
 #-----Body
-if("" -eq $myErrorFile ) {$myErrorFile = "U:\Databases\Temp\BackupTextResult.txt"}
-if("" -eq $myRestoreInstance ) {$myRestoreInstance = "DB-BK-DBV02.SAIPACORP.COM\NODE,49149"}	
-if("" -eq $myDestinationPath ) {$myDestinationPath = "\\DB-BK-DBV02\U$\Databases\Backup\"}
-if("" -eq $myMonitoringServer ) {$myMonitoringServer = "DB-MN-DLV02.SAIPACORP.COM\NODE,49149"}
-if("" -eq $myDataFilePath ) {$myDataFilePath = "F:\Data01\Databases\Data"}
-if("" -eq $myLogFilePath ) {$myLogFilePath = "F:\Log01\Databases\Log"}
-if("" -eq $DatabaseReportStore ) {$myDatabaseReportStore = "SqlDeep"}
+#if("" -eq $myErrorFile ) {$myErrorFile = "U:\Databases\Temp\BackupTextResult.txt"}
 
 #   Install-Module -Name SqlServer
 Write-Log -LogFilePath $myErrorFile -Content "Backup Test Process started" -Type INF

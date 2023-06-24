@@ -10,13 +10,13 @@ Param(
     [string]$ErrorFile
 )
 
-$myErrorFile = $ErrorFile # "U:\Databases\Temp\BackupTextResult.txt"
-$myRestoreInstance = $RestoreInstance # "DB-BK-DBV02.SAIPACORP.COM\NODE,49149"
-$myDestinationPath = $DestinationPath # "\\DB-BK-DBV02\U$\Databases\Backup\"
-$myMonitoringServer = $MonitoringServer #"DB-MN-DLV02.SAIPACORP.COM\NODE,49149" 
-$myDataFilePath = $DataFilePath # "F:\Data01\Databases\Data"
-$myLogFilePath = $LogFilePath # "F:\Log01\Databases\Log"
-$DatabaseReportStore = $DatabaseReportStore #"SqlDeep"
+$myErrorFile = $ErrorFile 
+$myRestoreInstance = $RestoreInstance 
+$myDestinationPath = $DestinationPath 
+$myMonitoringServer = $MonitoringServer 
+$myDataFilePath = $DataFilePath 
+$myLogFilePath = $LogFilePath 
+$DatabaseReportStore = $DatabaseReportStore
 $myMaximumTryCountToFindUncheckedBackup = 5
 
 #--------------------------------------------------------------Functions
