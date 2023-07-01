@@ -10,13 +10,13 @@ Param(
     [string]$ErrorFile
 )
 
-$myErrorFile = $ErrorFile # "U:\Databases\Temp\BackupTextResult.txt"
-$myRestoreInstance = $RestoreInstance # "DB-BK-DBV02.SAIPACORP.COM\NODE,49149"
-$myDestinationPath = $DestinationPath # "\\DB-BK-DBV02\U$\Databases\Backup\"
-$myMonitoringServer = $MonitoringServer #"DB-MN-DLV02.SAIPACORP.COM\NODE,49149" 
-$myDataFilePath = $DataFilePath # "F:\Data01\Databases\Data"
-$myLogFilePath = $LogFilePath # "F:\Log01\Databases\Log"
-$DatabaseReportStore = $DatabaseReportStore #"SqlDeep"
+$myErrorFile = $ErrorFile 
+$myRestoreInstance = $RestoreInstance 
+$myDestinationPath = $DestinationPath 
+$myMonitoringServer = $MonitoringServer
+$myDataFilePath = $DataFilePath 
+$myLogFilePath = $LogFilePath 
+$DatabaseReportStore = $DatabaseReportStore 
 $myMaximumTryCountToFindUncheckedBackup = 5
 
 #--------------------------------------------------------------Functions
@@ -56,7 +56,7 @@ Function IsTested {
     Where [HashValue] = @myHashValue 
     AND @myRecoveryDateTime BETWEEN [BackupStartTime] AND [BackupRestoredTime]
     "
-    $myResultCheckDate = Invoke-Sqlcmd -ServerInstance $InstanceName -Database $DatabaseReportStore -Query $myQuery -OutputSqlErrors $true -OutputAs DataRows
+    $myResultCheckDate = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database $DatabaseReportStore -Query $myQuery -OutputSqlErrors $true -OutputAs DataRows
     if ($myResultCheckDate[0] -eq 0 ) {
         $myResult = $false
     }
@@ -231,7 +231,8 @@ Function GetBackupFiles {
         CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(128))+'.'+'"+ $myDomainName + "'+'\'+ CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(128))+',49149' AS InstanceName,
         CONCAT('RESTORE DATABASE [', @myDBName,'] FROM',myBackupPath.BackupSourcePath,' WITH NORECOVERY, ',@myMoveCommand,' STATS = 5') AS myCompleteFullCommand
     FROM
-        @myBackupFiles AS myBackupPath    INNER JOIN #myResult AS myTable        ON myTable.MediaSetId = myBackupPath.MediaSetId;"
+        @myBackupFiles AS myBackupPath    INNER JOIN #myResult AS myTable        ON myTable.MediaSetId = myBackupPath.MediaSetId;
+    "
     $myResultQuery = Invoke-Sqlcmd -ServerInstance $InstanceName -Database $DatabaseName -Query $myFullBackupQuery -OutputSqlErrors $true -OutputAs DataTables
     return $myResultQuery
 }
@@ -242,12 +243,14 @@ Function RestoreFullCommand {
         [parameter(Mandatory = $true)][string]$DatabaseName,
         [parameter(Mandatory = $true)][string]$DestinationPath,
         [parameter(Mandatory = $true)][string]$RestoreInstance,
-        [parameter(Mandatory = $true)][INT]$ExecutionId
+        [parameter(Mandatory = $true)][INT]$ExecutionId,
+        [parameter(Mandatory = $true)][string]$InstanceName
     )
     # $UNCPath = $UNCPath.Replace("'","''")
 
 
     $myBackupSourcePath = "  
+    DECLARE @myInstanceName AS NVARCHAR(100)
     DECLARE @myDBName AS NVARCHAR(100)
     DECLARE @myNewDeviceName NVARCHAR(100)
     DECLARE @myExecutionId INT
@@ -255,6 +258,8 @@ Function RestoreFullCommand {
     SET @myExecutionId = CAST('" + $ExecutionId.ToString() + "' AS INT);
     SET @myNewDeviceName = '"+ $DestinationPath + "' --''\\DB-BK-DBV02\U$\Databases\Backup\'
     SET @myDBName = '"+ $DatabaseName + "' 
+    SET @myInstanceName = '"+ $InstanceName + "' 
+
     DECLARE @myBackupFiles TABLE (MediaSetId INT, BackupSourcePath nvarchar(MAX))
     INSERT INTO @myBackupFiles  
     SELECT
@@ -268,6 +273,7 @@ Function RestoreFullCommand {
         myTable.ExecutionId =  @myExecutionId
         AND myTable.DatabaseName = @myDBName
 		AND myTable.[BackupType] ='FULL'
+        AND myTable.InstanceName =@myInstanceName
     GROUP BY
         MediaSetId
         ,myTable.backupType
@@ -305,7 +311,7 @@ Function RestoreFullCommand {
     FROM
 	    [dbo].[FileListInfo] AS myfileTable
     --WHERE 
-    --	@myExecutionId = ExecutionId
+    --   @myExecutionId = ExecutionId
 
 
     SELECT DISTINCT CONCAT('RESTORE DATABASE [' ,@myDBName, '] FROM ',@myLogicalDeviceName ,' WITH NORECOVERY, ' , @myMoveCommand,' STATS = 5') AS myCompleteCommand 
@@ -321,6 +327,7 @@ Function RestoreDiffCommand {
         [parameter(Mandatory = $true)][string]$InstanceName,
         [parameter(Mandatory = $true)] [string]$DatabaseName,
         [parameter(Mandatory = $true)][string]$DestinationPath,
+        [parameter(Mandatory = $true)][string]$RestoreInstance,
         [parameter(Mandatory = $true)][INT]$ExecutionId
     )
     # $UNCPath = $UNCPath.Replace("'","''")
@@ -328,10 +335,10 @@ Function RestoreDiffCommand {
     DECLARE @myDBName AS NVARCHAR(100)
     DECLARE @myNewDeviceName NVARCHAR(100)
     DECLARE @myExecutionId INT
+    DECLARE @myInstanceName AS NVARCHAR(100)
 
+    SET @myInstanceName = '"+ $InstanceName + "' 
 	SET @myExecutionId = CAST('" + $ExecutionId.ToString() + "' AS INT);
-
-    -- SET @myLogicalDeviceName = N'" + $UNCPath + "'
     SET @myNewDeviceName = '"+ $DestinationPath + "'
     SET @myDBName = '"+ $DatabaseName + "'
 
@@ -351,20 +358,23 @@ FROM (
 			myTable.BackupType ='Differential'
 			AND myTable.ExecutionId =  @myExecutionId
 			AND myTable.DatabaseName = @myDBName
+            AND myTable.InstanceName =@myInstanceName
 		GROUP BY
 			 MediaSetId
 			,myTable.backupType
 	) AS myTableResult
     GROUP BY
-        myTableResult.Id    ORDER BY
+        myTableResult.Id    
+    ORDER BY
         myTableResult.Id
 "
-    $RestoreDiff = Invoke-Sqlcmd -ServerInstance $InstanceName -Database "tempdb" -Query $myRestoreCommand -OutputSqlErrors $true -QueryTimeout 0 -OutputAs DataTables 
+    $RestoreDiff = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query $myRestoreCommand -OutputSqlErrors $true -QueryTimeout 0 -OutputAs DataTables 
     return $RestoreDiff
 }
 Function RestoreLogCommand {
     Param (
         [parameter(Mandatory = $true)][string]$InstanceName,
+        [parameter(Mandatory = $true)][string]$RestoreInstance,
         [parameter(Mandatory = $true)] [string]$DatabaseName,
         [parameter(Mandatory = $true)][string]$DestinationPath,
         [parameter(Mandatory = $true)][Datetime]$RecoveryDate,
@@ -380,7 +390,9 @@ Function RestoreLogCommand {
     DECLARE @myCompleteCommand NVARCHAR(MAX)
     DECLARE @myStringDate NVARCHAR(50)
 	DECLARE @myExecutionId INT
+    DECLARE @myInstanceName AS NVARCHAR(100)
 
+    SET @myInstanceName = '"+ $InstanceName + "' 
 	SET @myExecutionId = CAST('" + $ExecutionId.ToString() + "' AS INT);
     SET @myNewDeviceName = '"+ $DestinationPath + "'
     SET @myMoveCommand = CAST(N'' AS NVARCHAR(MAX))
@@ -403,16 +415,18 @@ Function RestoreLogCommand {
             myTable.BackupType = 'LOG'
 			AND myTable.ExecutionId =  @myExecutionId
 			AND myTable.DatabaseName = @myDBName
+            AND myTable.InstanceName =@myInstanceName
         GROUP BY
             MediaSetId
             ,myTable.backupType
     ) AS myTableResult
     GROUP BY
         myTableResult.MediaSetId
-    ORDER BY myTableResult.MediaSetId
+    ORDER BY
+        myTableResult.MediaSetId
     "
     
-    $RestorLog = Invoke-Sqlcmd -ServerInstance $InstanceName -Database "tempdb" -Query $myRestoreCommand -OutputSqlErrors $true -QueryTimeout 0 
+    $RestorLog = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query $myRestoreCommand -OutputSqlErrors $true -QueryTimeout 0 
     return $RestorLog
 }
 function Test-FileLock {
@@ -554,7 +568,7 @@ Function SaveResult {
         ,N'"+ $ErrorFileAddress + "'
         )
         "
-    Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database $DatabaseReportStore -Query $myInsertCommand -OutputSqlErrors $true -QueryTimeout 0
+    Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database $myDatabaseReportStore -Query $myInsertCommand -OutputSqlErrors $true -QueryTimeout 0
     #   return $Result
 }
 # Copy File To Destination
@@ -631,7 +645,7 @@ Function LoadData {
     return $myList
 }
 #-----Body
-#if("" -eq $myErrorFile ) {$myErrorFile = "U:\Databases\Temp\BackupTextResult.txt"}
+
 
 #   Install-Module -Name SqlServer
 Write-Log -LogFilePath $myErrorFile -Content "Backup Test Process started" -Type INF
@@ -657,7 +671,7 @@ foreach ($myServer in $myServerList) {
         $myContinue = $true
         while ($myContinue) {
             Write-Log -LogFilePath $myErrorFile -Content "GenerateRandomDate started" -Type INF
-            $myRecoveryDate = GenerateRandomDate -MinNumber 1 -MaxNumber 4
+            $myRecoveryDate = GenerateRandomDate -MinNumber 1 -MaxNumber 3
             $myTryCount += 1
             if ($myTryCount -eq $myMaximumTryCountToFindUncheckedBackup) { $myContinue = $false }
             Write-Log -LogFilePath $myErrorFile -Content ("IsTested process for database [" + $myDatabase.Name + "] on " + $myRecoveryDate.ToString() + " started") -Type INF
@@ -720,7 +734,7 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
         catch [Exception]
         { 
             Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
-            SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult CopyFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $DatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
+            SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult CopyFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
             $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
             continue
         }
@@ -729,34 +743,36 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
     Write-Log -LogFilePath $myErrorFile -Content ("Restore database " + $myDatabase.Value.DatabaseName.ToString() + " full backup is started.") -Type INF
     try { #Restore full backup
         Write-Log -LogFilePath $myErrorFile -Content ("Restore full backup of " + $myDatabase.Value.DatabaseName + " database from " + $myBackupFile.UNCPath + " path on instance " + $myRestoreInstance + " is started.") -Type INF
-        $myRestoreCommand = RestoreFullCommand  -DatabaseName ($myDatabase.Value.DatabaseName) -DestinationPath $myDestinationPath -ExecutionId $myExecutionId -RestoreInstance $myRestoreInstance
+        $myRestoreCommand = RestoreFullCommand  -DatabaseName ($myDatabase.Value.DatabaseName) -DestinationPath $myDestinationPath -ExecutionId $myExecutionId -RestoreInstance $myRestoreInstance -InstanceName $myDatabase.Value.InstanceName
+           Write-Log -LogFilePath $myErrorFile -Content ("Restore full backup of " + $myRestoreCommand.myCompleteCommand + " is started.") -Type INF
         while (Test-FileLock -Path ($myDestinationPath + $myBackupFile.FileName) ) { Start-Sleep -Seconds 2 }
         Invoke-Sqlcmd -ServerInstance $myRestoreInstance -Database "master" -Query $myRestoreCommand.myCompleteCommand -ErrorAction Stop
     }
     catch [Exception] {
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
-        SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult RestoreFullBackupFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $DatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
+        SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult RestoreFullBackupFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
         $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
         continue
     }
     Write-Log -LogFilePath $myErrorFile -Content ("Restore database " + $myDatabase.Value.DatabaseName.ToString() + " differential backup is started.") -Type INF
     try { #Restore diff backup
         Write-Log -LogFilePath $myErrorFile -Content ("Restore diff backup of " + $myDatabase.Value.DatabaseName + " database from " + $myBackupFile.UNCPath + " path on instance " + $myRestoreInstance + " is started.") -Type INF
-        $myRestoreCommand = RestoreDiffCommand -InstanceName $myRestoreInstance -DatabaseName ($myDatabase.Value.DatabaseName) -DestinationPath $myDestinationPath -ExecutionId $myExecutionId
+        $myRestoreCommand = RestoreDiffCommand -RestoreInstance $myRestoreInstance -InstanceName $myDatabase.Value.InstanceName -DatabaseName ($myDatabase.Value.DatabaseName) -DestinationPath $myDestinationPath -ExecutionId $myExecutionId
         if ($null -ne $myRestoreCommand.myCompleteCommand) {
+        Write-Log -LogFilePath $myErrorFile -Content ("Restore database With Command for differential backup  " +$myRestoreCommand.myCompleteCommand + " is started.") -Type INF
             while (Test-FileLock -Path ($myDestinationPath + $myBackupFile.FileName) ) { Start-Sleep -Seconds 2 }
             Invoke-Sqlcmd -ServerInstance $myRestoreInstance -Database "master" -Query $myRestoreCommand.myCompleteCommand -ErrorAction Stop
         }
     }
     catch [Exception] {
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
-        SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult RestoreDiffBackupFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $DatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
+        SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult RestoreDiffBackupFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
         $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
         continue
     }
     Write-Log -LogFilePath $myErrorFile -Content ("Restore log backup(s) of " + $myDatabase.Value.DatabaseName + " database from " + $myBackupFile.UNCPath + " path on instance " + $myRestoreInstance + " is started.") -Type INF
     try { #Restore log backup(s)
-        $myRestoreList = RestoreLogCommand -InstanceName $myRestoreInstance -DatabaseName ($myDatabase.Value.DatabaseName) -DestinationPath $myDestinationPath -RecoveryDate ($myDatabase.Value.RecoveryDate) -ExecutionId $myExecutionId
+        $myRestoreList = RestoreLogCommand -RestoreInstance $myRestoreInstance -InstanceName $myDatabase.Value.InstanceName -DatabaseName ($myDatabase.Value.DatabaseName) -DestinationPath $myDestinationPath -RecoveryDate ($myDatabase.Value.RecoveryDate) -ExecutionId $myExecutionId
         foreach ($myRestoreCommand in $myRestoreList) {
             #Restore log backup
             Write-Log -LogFilePath $myErrorFile -Content ("Restore command is " + $myRestoreCommand.myCompleteCommand) -Type INF
@@ -766,35 +782,39 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
     }
     catch [Exception] {
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
-        SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult RestoreLogBackupFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $DatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
+        SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult RestoreLogBackupFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
         $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
         DropDatabase -InstanceName $myRestoreInstance -databaseName $myDatabase.Value.DatabaseName 
         continue
     } 
 
     Write-Log -LogFilePath $myErrorFile -Content ("CheckDB On " + $myDatabase.Value.DatabaseName + " is started.") -Type INF
-    try {# DBCC CHECKDB Test Database
+    try {
+        # DBCC CHECKDB Test Database
         Write-Log -LogFilePath $myErrorFile -Content ("CheckDB on database [" + $myDatabase.Value.DatabaseName + "] ") -Type INF
         $myDbccTestResult = CheckDB -InstanceName $myRestoreInstance -DatabaseName $myDatabase.Value.DatabaseName
         if ($myDbccTestResult -eq $flase) {
-            SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult CheckDbFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $DatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
+            SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult CheckDbFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
             continue
         }
     }
     catch [Exception] {
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
         SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName TestResult CheckDbFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BckupStartTime $myBackupFile.BackupStartTime -RecoveryDate $myDatabase.Value.RecoveryDate
+        $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
         continue
     } 
 
     Write-Log -LogFilePath $myErrorFile -Content ("Seve Test Result On " + $myDatabase.Value.DatabaseName + " to  is started.") -Type INF
-    try { #Seve Test Result On Tabale
+    try {
         Write-Log -LogFilePath $myErrorFile -Content ("Seve Test Result On " + $myDatabase.Value.DatabaseName + "to instance.") -Type INF
-        SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult Succseed -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $DatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
+        SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult Succseed -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
     }
 
     catch [Exception] {
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
+        $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
+        DropDatabase -InstanceName $myRestoreInstance -databaseName $myDatabase.Value.DatabaseName 
         continue
     }
 
