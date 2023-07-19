@@ -10,12 +10,12 @@ Param(
     [string]$ErrorFile
 )
 
-$myErrorFile = $ErrorFile # "U:\Databases\Temp\BackupTextResult.txt"
-$myRestoreInstance = $RestoreInstance
+$myErrorFile = $ErrorFile 
+$myRestoreInstance = $RestoreInstance 
 $myDestinationPath = $DestinationPath 
 $myMonitoringServer = $MonitoringServer 
 $myDataFilePath = $DataFilePath 
-$myLogFilePath = $LogFilePath
+$myLogFilePath = $LogFilePath 
 $myDatabaseReportStore = $DatabaseReportStore #"SqlDeep"
 $myMaximumTryCountToFindUncheckedBackup = 5
 
@@ -71,7 +71,6 @@ Function TestPath ([parameter(Mandatory = $true)][string]$BackupPath) {
     return $pathExists
 }
 # This function Find Path Backup
-
 Function GetBackupFiles {
     Param (
         [parameter (Mandatory = $True)][string]$InstanceName,
@@ -315,7 +314,7 @@ Function RestoreFullCommand {
     --   @myExecutionId = ExecutionId
 
 
-    SELECT DISTINCT CONCAT('RESTORE DATABASE [' ,@myDBName, '] FROM ',@myLogicalDeviceName ,' WITH NORECOVERY, ' , @myMoveCommand,' STATS = 5') AS myCompleteCommand 
+    SELECT DISTINCT CONCAT('RESTORE DATABASE [' ,@myDBName,'_',@myExecutionId, '] FROM ',@myLogicalDeviceName ,' WITH NORECOVERY, ' , @myMoveCommand,' STATS = 5') AS myCompleteCommand 
     FROM [dbo].[BackupPathResult] AS myTable
     WHERE [BackupType] = N'FULL'
 
@@ -402,7 +401,7 @@ Function RestoreLogCommand {
     SET @myStringDate = '"+ $myStringDate + "'
 
     SELECT  
-        MAX(CONCAT('RESTORE LOG [' ,@myDBName, '] FROM',myTableResult.FileList ,' WITH FILE = ', myTableResult.Position,' , NORECOVERY, CHECKSUM , STOPAT =''',@myStringDate,'''')) As myCompleteCommand
+        MAX(CONCAT('RESTORE LOG [' ,@myDBName,'_',@myExecutionId, '] FROM',myTableResult.FileList ,' WITH FILE = ', myTableResult.Position,' , NORECOVERY, CHECKSUM , STOPAT =''',@myStringDate,'''')) As myCompleteCommand
     FROM (
         SELECT 
             MAX(myTable.Position) AS Position,
@@ -462,7 +461,7 @@ Function GetServerInfo {
             msdb.dbo.sysmanagement_shared_server_groups_internal As myGroups 
             INNER JOIN msdb.dbo.sysmanagement_shared_registered_servers_internal As myServer  ON myGroups.server_group_id = myServer.server_group_id
         WHERE
-            myServer.server_name NOT IN('$InstanceName' ,'$TargetServer' ,'DB-TEST-DTV04.SAIPACORP.COM\NODE,49149')
+            myServer.server_name  NOT IN('$InstanceName' ,'$TargetServer' ,'DB-TEST-DTV04.SAIPACORP.COM\NODE,49149')
             AND myGroups.name = 'SQL 2019'
   
     "
@@ -481,7 +480,7 @@ Function GetDatabaseInfo {
         master.sys.databases myDatabase WITH (READPAST)
         LEFT OUTER JOIN master.sys.dm_hadr_availability_replica_states AS myHA WITH (READPAST) on myDatabase.replica_id=myHa.replica_id
     WHERE
-        [myDatabase].[name] NOT IN ('model','tempdb','SSISDB','SqlDeep') 
+        [myDatabase].[name] NOT IN ('TBSFileServerDB','master','msdb','model','tempdb','SSISDB','SqlDeep','DWQueue','DWDiagnostics','DWConfiguration','WSS_Content_archive_engineering','WSS_Content_archive_Personneli','WSS_Content_archive_saipagroup_net','WSS_Content_dealernews','WSS_Content_DMS','TBSFileServerDB') 
         AND [myDatabase].[state] = 0
         AND [myDatabase].[source_database_id] IS NULL -- REAL DBS ONLY (Not Snapshots)
         AND [myDatabase].[is_read_only] = 0
@@ -494,15 +493,23 @@ Function GetDatabaseInfo {
 Function CheckDB {
     Param (
         [parameter(Mandatory = $true)][string]$InstanceName,
-        [parameter(Mandatory = $true)][string]$databaseName
+        [parameter(Mandatory = $true)][string]$databaseName,
+        [parameter(Mandatory = $true)][INT]$ExecutionId
     )
     $query = 
-    "IF (SELECT state_desc FROM sys.databases  WHERE name = '$databaseName') = 'RESTORING'
-        Restore DATABASE $databaseName WITH RECOVERY ;
-        DBCC CHECKDB ($databaseName) WITH  NO_INFOMSGS ;
-        "
+    " 
+    DECLARE @myDBName AS NVARCHAR(100)
+    DECLARE @myExecutionId INT
+    SET @myExecutionId = CAST('" + $ExecutionId.ToString() + "' AS INT);
+    SET @myDBName = CAST(CONCAT('"+ $databaseName + "','_', @myExecutionId)AS Nvarchar(100));
 
-    $ResultCheckTest = Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $query  -OutputSqlErrors $true -OutputAs DataTables
+        IF (SELECT state_desc FROM sys.databases  WHERE name = @myDBName) = 'RESTORING'
+        Restore DATABASE @myDBName WITH RECOVERY ;
+        DBCC CHECKDB (@myDBName) WITH  NO_INFOMSGS ;
+    "
+
+    $ResultCheckTest = Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $query  -OutputSqlErrors $true -OutputAs DataTables -ErrorAction Stop 
+    Write-Host $ResultCheckTest
     if ($null -eq $ResultCheckTest ) {
         $resultCheck = $true
     }
@@ -590,12 +597,13 @@ Function DeleatFile {
 Function DropDatabase {
     Param (
         [parameter(Mandatory = $true)][string]$InstanceName,
-        [parameter(Mandatory = $true)][string]$databaseName
+        [parameter(Mandatory = $true)][string]$databaseName,
+        [parameter(Mandatory = $true)][INT]$ExecutionId
     )
-
+    $myNewDatabaseName = $databaseName+"_"+$ExecutionId
     $myQuery = 
     "
-    DROP DATABASE IF EXISTS [$databaseName]
+    DROP DATABASE IF EXISTS [$myNewDatabaseName]
     "
     Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $myQuery  -OutputSqlErrors $true -OutputAs DataTables
 
@@ -659,7 +667,6 @@ Function ClearAllMetadata{
     Invoke-Sqlcmd -ServerInstance $BackupInstance -Database "tempdb" -Query $myQuery -OutputSqlErrors $true -OutputAs DataTables -ErrorAction Stop
 }
 #-----Body
-
 if("" -eq $myErrorFile ) {$myErrorFile = "U:\Databases\Temp\BackupTextResult.txt"}
 
 #   Install-Module -Name SqlServer
@@ -806,7 +813,7 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
         SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult RestoreLogBackupFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
         $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
-        DropDatabase -InstanceName $myRestoreInstance -databaseName $myDatabase.Value.DatabaseName 
+        DropDatabase -InstanceName $myRestoreInstance -databaseName $myDatabase.Value.DatabaseName -ExecutionId $myExecutionId
         continue
     } 
 
@@ -814,7 +821,7 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
     try {
         # DBCC CHECKDB Test Database
         Write-Log -LogFilePath $myErrorFile -Content ("CheckDB on database [" + $myDatabase.Value.DatabaseName + "] ") -Type INF
-        $myDbccTestResult = CheckDB -InstanceName $myRestoreInstance -DatabaseName $myDatabase.Value.DatabaseName
+        $myDbccTestResult = CheckDB -InstanceName $myRestoreInstance -DatabaseName $myDatabase.Value.DatabaseName -ExecutionId $myExecutionId
         if ($myDbccTestResult -eq $flase) {
             SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult CheckDbFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
             continue
@@ -822,7 +829,7 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
     }
     catch [Exception] {
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
-        SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName TestResult CheckDbFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BckupStartTime $myBackupFile.BackupStartTime -RecoveryDate $myDatabase.Value.RecoveryDate
+        SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult CheckDbFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
         $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
         continue
     } 
@@ -836,15 +843,15 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
     catch [Exception] {
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
         $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
-        DropDatabase -InstanceName $myRestoreInstance -databaseName $myDatabase.Value.DatabaseName 
+        DropDatabase -InstanceName $myRestoreInstance -databaseName $myDatabase.Value.DatabaseName -ExecutionId $myExecutionId
         continue
     }
 
-    Write-Log -LogFilePath $myErrorFile -Content ("Drop database [" + $myDatabase.Value.DatabaseName + "] is Started") -Type INF
+  Write-Log -LogFilePath $myErrorFile -Content ("Drop database [" + $myDatabase.Value.DatabaseName + "] is Started") -Type INF
     try {
         # Drop Database
         Write-Log -LogFilePath $myErrorFile -Content ("Drop database [" + $myDatabase.Value.DatabaseName + "] ") -Type INF
-        DropDatabase -InstanceName $myRestoreInstance -databaseName $myDatabase.Value.DatabaseName 
+        DropDatabase -InstanceName $myRestoreInstance -databaseName $myDatabase.Value.DatabaseName  -ExecutionId $myExecutionId
     }
     catch [Exception] {
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
