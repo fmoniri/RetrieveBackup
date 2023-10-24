@@ -10,12 +10,12 @@ Param(
     [string]$ErrorFile
 )
 
-$myErrorFile = $ErrorFile 
-$myRestoreInstance = $RestoreInstance 
-$myDestinationPath = $DestinationPath 
-$myMonitoringServer = $MonitoringServer 
-$myDataFilePath = $DataFilePath 
-$myLogFilePath = $LogFilePath 
+$myErrorFile = $ErrorFile # "U:\Databases\Temp\BackupTextResult.txt"
+$myRestoreInstance = $RestoreInstance # "DB-BK-DBV02.SAIPACORP.COM\NODE,49149"
+$myDestinationPath = $DestinationPath # "\\DB-BK-DBV02\U$\Databases\Backup\"
+$myMonitoringServer = $MonitoringServer #"DB-MN-DLV02.SAIPACORP.COM\NODE,49149" 
+$myDataFilePath = $DataFilePath # "F:\Data01\Databases\Data"
+$myLogFilePath = $LogFilePath # "F:\Log01\Databases\Log"
 $myDatabaseReportStore = $DatabaseReportStore #"SqlDeep"
 $myMaximumTryCountToFindUncheckedBackup = 5
 
@@ -480,7 +480,7 @@ Function GetDatabaseInfo {
         master.sys.databases myDatabase WITH (READPAST)
         LEFT OUTER JOIN master.sys.dm_hadr_availability_replica_states AS myHA WITH (READPAST) on myDatabase.replica_id=myHa.replica_id
     WHERE
-        [myDatabase].[name] NOT IN ('TBSFileServerDB','master','msdb','model','tempdb','SSISDB','SqlDeep','DWQueue','DWDiagnostics','DWConfiguration','WSS_Content_archive_engineering','WSS_Content_archive_Personneli','WSS_Content_archive_saipagroup_net','WSS_Content_dealernews','WSS_Content_DMS','TBSFileServerDB') 
+        [myDatabase].[name] NOT IN ('TBSFileServerDB','model','tempdb','SSISDB','SqlDeep','DWQueue','DWDiagnostics','DWConfiguration','WSS_Content_archive_engineering','WSS_Content_archive_Personneli','WSS_Content_archive_saipagroup_net','WSS_Content_dealernews','WSS_Content_DMS','TBSFileServerDB') 
         AND [myDatabase].[state] = 0
         AND [myDatabase].[source_database_id] IS NULL -- REAL DBS ONLY (Not Snapshots)
         AND [myDatabase].[is_read_only] = 0
@@ -597,7 +597,7 @@ Function DeleatFile {
 Function DropDatabase {
     Param (
         [parameter(Mandatory = $true)][string]$InstanceName,
-        [parameter(Mandatory = $true)][string]$databaseName,
+        [parameter(Mandatory = $true)][string]$DatabaseName,
         [parameter(Mandatory = $true)][INT]$ExecutionId
     )
     $myNewDatabaseName = $databaseName+"_"+$ExecutionId
@@ -667,6 +667,13 @@ Function ClearAllMetadata{
     Invoke-Sqlcmd -ServerInstance $BackupInstance -Database "tempdb" -Query $myQuery -OutputSqlErrors $true -OutputAs DataTables -ErrorAction Stop
 }
 #-----Body
+if("" -eq $myErrorFile ) {$myErrorFile = "U:\Databases\Temp\BackupTextResult.txt"}
+if("" -eq $myRestoreInstance ) {$myRestoreInstance = "DB-BK-DBV02.SAIPACORP.COM\NODE,49149"}	
+if("" -eq $myDestinationPath ) {$myDestinationPath = "\\DB-BK-DBV02\U$\Databases\Backup\"}
+if("" -eq $myMonitoringServer ) {$myMonitoringServer = "DB-MN-DLV02.SAIPACORP.COM\NODE,49149"}
+if("" -eq $myDataFilePath ) {$myDataFilePath = "F:\Data01\Databases\Data"}
+if("" -eq $myLogFilePath ) {$myLogFilePath = "F:\Log01\Databases\Log"}
+if("" -eq $DatabaseReportStore ) {$myDatabaseReportStore = "SqlDeep"}
 if("" -eq $myErrorFile ) {$myErrorFile = "U:\Databases\Temp\BackupTextResult.txt"}
 
 #   Install-Module -Name SqlServer
@@ -813,7 +820,7 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
         SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult RestoreLogBackupFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
         $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
-        DropDatabase -InstanceName $myRestoreInstance -databaseName $myDatabase.Value.DatabaseName -ExecutionId $myExecutionId
+        DropDatabase -InstanceName $myRestoreInstance -DatabaseName $myDatabase.Value.DatabaseName -ExecutionId $myExecutionId
         continue
     } 
 
@@ -831,6 +838,7 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
         SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult CheckDbFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
         $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
+        DropDatabase -InstanceName $myRestoreInstance -DatabaseName $myDatabase.Value.DatabaseName -ExecutionId $myExecutionId
         continue
     } 
 
@@ -843,7 +851,7 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
     catch [Exception] {
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
         $myBackupFileList | Where-Object { $_.DatabaseName -EQ $myDatabase.Value.DatabaseName -and $_.ExecutionId -EQ $myExecutionId -and $_.InstanceName -EQ $myDatabase.Value.InstanceName } | Remove-Item -Path { $myDestinationPath + $_.FileName } -Force -ErrorAction Ignore
-        DropDatabase -InstanceName $myRestoreInstance -databaseName $myDatabase.Value.DatabaseName -ExecutionId $myExecutionId
+        DropDatabase -InstanceName $myRestoreInstance -DatabaseName $myDatabase.Value.DatabaseName -ExecutionId $myExecutionId
         continue
     }
 
