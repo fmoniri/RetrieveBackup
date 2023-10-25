@@ -11,9 +11,9 @@ Param(
 )
 
 $myErrorFile = $ErrorFile # "U:\Databases\Temp\BackupTextResult.txt"
-$myRestoreInstance = $RestoreInstance # "DB-BK-DBV02.SAIPACORP.COM\NODE,49149"
-$myDestinationPath = $DestinationPath # "\\DB-BK-DBV02\U$\Databases\Backup\"
-$myMonitoringServer = $MonitoringServer #"DB-MN-DLV02.SAIPACORP.COM\NODE,49149" 
+$myRestoreInstance = $RestoreInstance # "DB-BK"
+$myDestinationPath = $DestinationPath # "\\DB-BK\C$\Databases\Backup\"
+$myMonitoringServer = $MonitoringServer #"DB-MN-" 
 $myDataFilePath = $DataFilePath # "F:\Data01\Databases\Data"
 $myLogFilePath = $LogFilePath # "F:\Log01\Databases\Log"
 $myDatabaseReportStore = $DatabaseReportStore #"SqlDeep"
@@ -668,9 +668,9 @@ Function ClearAllMetadata{
 }
 #-----Body
 if("" -eq $myErrorFile ) {$myErrorFile = "U:\Databases\Temp\BackupTextResult.txt"}
-if("" -eq $myRestoreInstance ) {$myRestoreInstance = "DB-BK-DBV02.SAIPACORP.COM\NODE,49149"}	
-if("" -eq $myDestinationPath ) {$myDestinationPath = "\\DB-BK-DBV02\U$\Databases\Backup\"}
-if("" -eq $myMonitoringServer ) {$myMonitoringServer = "DB-MN-DLV02.SAIPACORP.COM\NODE,49149"}
+if("" -eq $myRestoreInstance ) {$myRestoreInstance = "DB-BK"}	
+if("" -eq $myDestinationPath ) {$myDestinationPath = "\\DB-BK\C$\Databases\Backup\"}
+if("" -eq $myMonitoringServer ) {$myMonitoringServer = "DB-MN"}
 if("" -eq $myDataFilePath ) {$myDataFilePath = "F:\Data01\Databases\Data"}
 if("" -eq $myLogFilePath ) {$myLogFilePath = "F:\Log01\Databases\Log"}
 if("" -eq $DatabaseReportStore ) {$myDatabaseReportStore = "SqlDeep"}
