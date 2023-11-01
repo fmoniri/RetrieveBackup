@@ -56,7 +56,7 @@ Function IsTested {
     Where [HashValue] = @myHashValue 
     AND @myRecoveryDateTime BETWEEN [BackupStartTime] AND [BackupRestoredTime]
     "
-    $myResultCheckDate = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database $DatabaseReportStore -Query $myQuery -OutputSqlErrors $true -OutputAs DataRows
+    $myResultCheckDate = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database $DatabaseReportStore -Query $myQuery -OutputSqlErrors $true -OutputAs DataRows  -TrustServerCertificate
     if ($myResultCheckDate[0] -eq 0 ) {
         $myResult = $false
     }
@@ -85,19 +85,21 @@ Function GetBackupFiles {
     DROP TABLE #myResult;
 
     DECLARE @myRecoveryDate AS NVARCHAR(50);
-    DECLARE @myDBName AS NVARCHAR(50);
+    DECLARE @myDBName AS NVARCHAR(255);    
+    DECLARE @myInstanceName AS NVARCHAR(50);
     DECLARE @myStartLsn NUMERIC(25, 0);
     DECLARE @LogicalName NVARCHAR(100);
     DECLARE @myUNCPath NVARCHAR(100);
-    DECLARE @physicalLogAddress NVARCHAR(50);
-    DECLARE @physicalDataAddress NVARCHAR(50);
+    DECLARE @physicalLogAddress NVARCHAR(255);
+    DECLARE @physicalDataAddress NVARCHAR(255);
     DECLARE @myMoveCommand NVARCHAR(MAX);
     DECLARE @myCompleteCommand NVARCHAR(MAX);
 
     SET @myRecoveryDate = CAST('" + $BackupDate.ToString() + "' AS DATETIME);
     SET @myDBName = N'"+ $DatabaseName + "';
-    SET @physicalLogAddress = N'"+ $LogFilePath + "\';
-    SET @physicalDataAddress = N'"+ $DataFilePath + "\';
+    SET @myInstanceName = N'"+ $InstanceName + "';
+    SET @physicalLogAddress =  CONCAT(N'F:\Log01\Databases\Log\',@myDBName,N'\') ;
+    SET @physicalDataAddress = CONCAT(N'F:\Data01\Databases\Data\',@myDBName,N'\') ;
     SET @myMoveCommand = CAST(N'' AS NVARCHAR(MAX));
 
     CREATE TABLE #myResult
@@ -223,19 +225,22 @@ Function GetBackupFiles {
             ELSE             NULL
         END AS BackupType,
         RIGHT(FILEPATH, CHARINDEX('\', REVERSE(FILEPATH))-1) AS [FileName],
-        CONCAT('\\',SUBSTRING(@@SERVERNAME, 1, LEN(@@SERVERNAME) - LEN(@@SERVICENAME) - 1),'\',LEFT(FILEPATH, 1),'$',RIGHT(FILEPATH, (LEN(FILEPATH) - 2))) AS UNCPath,
+       IIF (@@SERVICENAME = 'MSSQLSERVER' , CONCAT('\\',SUBSTRING(@@SERVERNAME, 1, CHARINDEX(' ',@@SERVICENAME+ ' ') - 1),'\',LEFT(FILEPATH, 1),'$',RIGHT(FILEPATH, (LEN(FILEPATH) - 2))),
+			CONCAT('\\',SUBSTRING(@@SERVERNAME, 1, LEN(@@SERVERNAME) - LEN(@@SERVICENAME) - 1),'\',LEFT(FILEPATH, 1),'$',RIGHT(FILEPATH, (LEN(FILEPATH) - 2)))) AS UNCPath,
         myTable.Position,
         myTable.MediaSetId,
         myTable.BackupStartTime,
         myBackupPath.BackupSourcePath,
-        CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(128))+'.'+'"+ $myDomainName + "'+'\'+ CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(128))+',49149' AS InstanceName,
+       -- CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(128))+'.'+'"+ $myDomainName + "'+'\'+ CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(128))+',49149' AS InstanceName,
+        @myInstanceName AS InstanceName,
         CONCAT('RESTORE DATABASE [', @myDBName,'] FROM',myBackupPath.BackupSourcePath,' WITH NORECOVERY, ',@myMoveCommand,' STATS = 5') AS myCompleteFullCommand
     FROM
         @myBackupFiles AS myBackupPath    INNER JOIN #myResult AS myTable        ON myTable.MediaSetId = myBackupPath.MediaSetId;
     "
-    $myResultQuery = Invoke-Sqlcmd -ServerInstance $InstanceName -Database $DatabaseName -Query $myFullBackupQuery -OutputSqlErrors $true -OutputAs DataTables
+    $myResultQuery = Invoke-Sqlcmd -ServerInstance $InstanceName -Database $DatabaseName -Query $myFullBackupQuery -OutputSqlErrors $true -OutputAs DataTables -TrustServerCertificate
     return $myResultQuery
 }
+
 # This function for Restore Command
 Function RestoreFullCommand {
     Param (
@@ -281,10 +286,10 @@ Function RestoreFullCommand {
     SELECT BackupSourcePath FROM @myBackupFiles
     "
    
-    $BackupSourcePath = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query $myBackupSourcePath #-OutputAs DataTables
+    $BackupSourcePath = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query $myBackupSourcePath  -TrustServerCertificate #-OutputAs DataTables
     $myMoveCommand = "RESTORE FILELISTONLY FROM " + $BackupSourcePath.BackupSourcePath + ""
-    $myResult = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "master" -Query $myMoveCommand -OutputAs DataTables
-    Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query "TRUNCATE TABLE [tempdb].dbo.FileListInfo" 
+    $myResult = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "master" -Query $myMoveCommand -OutputAs DataTables  -TrustServerCertificate
+    Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query "TRUNCATE TABLE [tempdb].dbo.FileListInfo"   -TrustServerCertificate
     #  TruncateTable -InstanceName $RestoreInstance -SchemaName "dbo" -TableName "FileListInfo" 
     $myResult | Select-Object -Property LogicalName, Type, physicalname | Write-SqlTableData -ServerInstance $RestoreInstance -DatabaseName "tempdb" -SchemaName "dbo" -TableName "FileListInfo" -Force
     $myLogicalDevice = $BackupSourcePath.BackupSourcePath.replace("'", "''")
@@ -319,7 +324,7 @@ Function RestoreFullCommand {
     WHERE [BackupType] = N'FULL'
 
 "   
-    $RestoreFull = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query $myRestoreFullCommand -OutputSqlErrors $true -QueryTimeout 0 -OutputAs DataTables 
+    $RestoreFull = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query $myRestoreFullCommand -OutputSqlErrors $true -QueryTimeout 0 -OutputAs DataTables  -TrustServerCertificate
     return $RestoreFull
 }
 Function RestoreDiffCommand {
@@ -368,7 +373,7 @@ FROM (
     ORDER BY
         myTableResult.Id
 "
-    $RestoreDiff = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query $myRestoreCommand -OutputSqlErrors $true -QueryTimeout 0 -OutputAs DataTables 
+    $RestoreDiff = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query $myRestoreCommand -OutputSqlErrors $true -QueryTimeout 0 -OutputAs DataTables  -TrustServerCertificate
     return $RestoreDiff
 }
 Function RestoreLogCommand {
@@ -426,7 +431,7 @@ Function RestoreLogCommand {
         myTableResult.MediaSetId
     "
     
-    $RestorLog = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query $myRestoreCommand -OutputSqlErrors $true -QueryTimeout 0 
+    $RestorLog = Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database "tempdb" -Query $myRestoreCommand -OutputSqlErrors $true -QueryTimeout 0  -TrustServerCertificate
     return $RestorLog
 }
 function Test-FileLock {
@@ -465,7 +470,7 @@ Function GetServerInfo {
             AND myGroups.name = 'SQL 2019'
   
     "
-    $myServerList = Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $QueryInfo -OutputSqlErrors $true -OutputAs DataTables
+    $myServerList = Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $QueryInfo -OutputSqlErrors $true -OutputAs DataTables  -TrustServerCertificate
     return $myServerList
 }
 Function GetDatabaseInfo {
@@ -486,7 +491,7 @@ Function GetDatabaseInfo {
         AND [myDatabase].[is_read_only] = 0
         AND ([myHA].[role]=1 or [myHA].[role] is null)
     "
-    $myDatabaseList = Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $myQueryInfo -OutputSqlErrors $true -OutputAs DataTables
+    $myDatabaseList = Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $myQueryInfo -OutputSqlErrors $true -OutputAs DataTables  -TrustServerCertificate
     return $myDatabaseList
 }
 # After the DB has been restored, run a DBCC CHECKDB it
@@ -508,7 +513,7 @@ Function CheckDB {
         DBCC CHECKDB (@myDBName) WITH  NO_INFOMSGS ;
     "
 
-    $ResultCheckTest = Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $query  -OutputSqlErrors $true -OutputAs DataTables -ErrorAction Stop 
+    $ResultCheckTest = Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $query  -OutputSqlErrors $true -OutputAs DataTables -ErrorAction Stop  -TrustServerCertificate
     Write-Host $ResultCheckTest
     if ($null -eq $ResultCheckTest ) {
         $resultCheck = $true
@@ -576,7 +581,7 @@ Function SaveResult {
         ,N'"+ $ErrorFileAddress + "'
         )
         "
-    Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database $myDatabaseReportStore -Query $myInsertCommand -OutputSqlErrors $true -QueryTimeout 0
+    Invoke-Sqlcmd -ServerInstance $RestoreInstance -Database $myDatabaseReportStore -Query $myInsertCommand -OutputSqlErrors $true -QueryTimeout 0  -TrustServerCertificate
     #   return $Result
 }
 # Copy File To Destination
@@ -605,7 +610,7 @@ Function DropDatabase {
     "
     DROP DATABASE IF EXISTS [$myNewDatabaseName]
     "
-    Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $myQuery  -OutputSqlErrors $true -OutputAs DataTables
+    Invoke-Sqlcmd -ServerInstance $InstanceName -Database "master" -Query $myQuery  -OutputSqlErrors $true -OutputAs DataTables  -TrustServerCertificate
 
 }
 Function TruncateTable {
@@ -623,7 +628,7 @@ Function TruncateTable {
         IF EXISTS (SELECT 1 FROM Tempdb.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '"+ $SchemaName + "' AND TABLE_NAME = '" + $TableName + "')
             DELETE FROM [tempdb].["+ $SchemaName + "].[" + $TableName + "] WHERE ExecutionId=@myExecutionId
         "
-    Invoke-Sqlcmd -ServerInstance $InstanceName -Database "tempdb" -Query $myQuery  -OutputSqlErrors $true -OutputAs DataTables
+    Invoke-Sqlcmd -ServerInstance $InstanceName -Database "tempdb" -Query $myQuery  -OutputSqlErrors $true -OutputAs DataTables  -TrustServerCertificate
 }
 # Fill Log file
 Function Write-Log {
@@ -650,7 +655,7 @@ Function LoadData {
     param (
         [parameter(Mandatory = $true)][string]$BackupInstance
     )
-    $myList = Invoke-Sqlcmd -ServerInstance $myRestoreInstance -Database "tempdb" -Query "SELECT * FROM [tempdb].[dbo].[BackupPathResult]" -OutputSqlErrors $true -OutputAs DataTables
+    $myList = Invoke-Sqlcmd -ServerInstance $myRestoreInstance -Database "tempdb" -Query "SELECT * FROM [tempdb].[dbo].[BackupPathResult]" -OutputSqlErrors $true -OutputAs DataTables  -TrustServerCertificate
     return $myList
 }
 Function ClearAllMetadata{
@@ -664,7 +669,7 @@ Function ClearAllMetadata{
     GO
     "
     Clear-Variable my* -Scope Global
-    Invoke-Sqlcmd -ServerInstance $BackupInstance -Database "tempdb" -Query $myQuery -OutputSqlErrors $true -OutputAs DataTables -ErrorAction Stop
+    Invoke-Sqlcmd -ServerInstance $BackupInstance -Database "tempdb" -Query $myQuery -OutputSqlErrors $true -OutputAs DataTables -ErrorAction Stop  -TrustServerCertificate
 }
 #-----Body
 if("" -eq $myErrorFile ) {$myErrorFile = "U:\Databases\Temp\BackupTextResult.txt"}
@@ -674,7 +679,7 @@ if("" -eq $myMonitoringServer ) {$myMonitoringServer = "DB-MN"}
 if("" -eq $myDataFilePath ) {$myDataFilePath = "F:\Data01\Databases\Data"}
 if("" -eq $myLogFilePath ) {$myLogFilePath = "F:\Log01\Databases\Log"}
 if("" -eq $DatabaseReportStore ) {$myDatabaseReportStore = "SqlDeep"}
-if("" -eq $myErrorFile ) {$myErrorFile = "U:\Databases\Temp\BackupTextResult.txt"}
+
 
 #   Install-Module -Name SqlServer
 Write-Log -LogFilePath $myErrorFile -Content "Backup Test Process started" -Type INF
@@ -775,7 +780,7 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
         $myRestoreCommand = RestoreFullCommand  -DatabaseName ($myDatabase.Value.DatabaseName) -DestinationPath $myDestinationPath -ExecutionId $myExecutionId -RestoreInstance $myRestoreInstance -InstanceName $myDatabase.Value.InstanceName
         Write-Log -LogFilePath $myErrorFile -Content ("Restore full backup of " + $myRestoreCommand.myCompleteCommand + " is started.") -Type INF
         while (Test-FileLock -Path ($myDestinationPath + $myBackupFile.FileName) ) { Start-Sleep -Seconds 2 }
-        Invoke-Sqlcmd -ServerInstance $myRestoreInstance -Database "master" -Query $myRestoreCommand.myCompleteCommand -ErrorAction Stop
+        Invoke-Sqlcmd -ServerInstance $myRestoreInstance -Database "master" -Query $myRestoreCommand.myCompleteCommand -ErrorAction Stop  -TrustServerCertificate
     }
     catch [Exception] {
         Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
@@ -790,7 +795,7 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
         if ($null -ne $myRestoreCommand.myCompleteCommand) {
         Write-Log -LogFilePath $myErrorFile -Content ("Restore database With Command for differential backup  " +$myRestoreCommand.myCompleteCommand + " is started.") -Type INF
             while (Test-FileLock -Path ($myDestinationPath + $myBackupFile.FileName) ) { Start-Sleep -Seconds 2 }
-            Invoke-Sqlcmd -ServerInstance $myRestoreInstance -Database "master" -Query $myRestoreCommand.myCompleteCommand -ErrorAction Stop
+            Invoke-Sqlcmd -ServerInstance $myRestoreInstance -Database "master" -Query $myRestoreCommand.myCompleteCommand -ErrorAction Stop  -TrustServerCertificate
         }
     }
     catch [Exception] {
@@ -807,7 +812,7 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
             Write-Log -LogFilePath $myErrorFile -Content ("Restore command is " + $myRestoreCommand.myCompleteCommand) -Type INF
             while (Test-FileLock -Path ($myDestinationPath + $myBackupFile.FileName)) { Start-Sleep -Seconds 2 }
             try {
-                Invoke-Sqlcmd -ServerInstance $myRestoreInstance -Database "master" -Query $myRestoreCommand.myCompleteCommand -ErrorAction Stop -IncludeSqlUserErrors    
+                Invoke-Sqlcmd -ServerInstance $myRestoreInstance -Database "master" -Query $myRestoreCommand.myCompleteCommand -ErrorAction Stop -IncludeSqlUserErrors   -TrustServerCertificate
             }
             catch {
                 Write-Log -LogFilePath $myErrorFile -Content $($_.Exception.Message) -Type ERR
@@ -828,10 +833,13 @@ foreach ($myDatabase in ($myDatabaseHashList.GetEnumerator() | Where-Object { $_
     try {
         # DBCC CHECKDB Test Database
         Write-Log -LogFilePath $myErrorFile -Content ("CheckDB on database [" + $myDatabase.Value.DatabaseName + "] ") -Type INF
-        $myDbccTestResult = CheckDB -InstanceName $myRestoreInstance -DatabaseName $myDatabase.Value.DatabaseName -ExecutionId $myExecutionId
-        if ($myDbccTestResult -eq $flase) {
-            SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult CheckDbFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
-            continue
+        if ($myDatabase.Value.DatabaseName -ne 'master') # For exempted error massege 8992
+        {
+            $myDbccTestResult = CheckDB -InstanceName $myRestoreInstance -DatabaseName $myDatabase.Value.DatabaseName -ExecutionId $myExecutionId
+            if ($myDbccTestResult -eq $flase) {
+                SaveResult -BackupInstance $myDatabase.Value.InstanceName -DatabaseName $myDatabase.Value.DatabaseName -TestResult CheckDbFail -ErrorFileAddress $myErrorFile -RestoreInstance $myRestoreInstance -BackupStartTime $myBackupFile.BackupStartTime -DatabaseReportStore $myDatabaseReportStore -RecoveryDate $myDatabase.Value.RecoveryDate
+                continue
+            }
         }
     }
     catch [Exception] {
