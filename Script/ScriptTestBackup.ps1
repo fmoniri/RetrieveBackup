@@ -72,6 +72,53 @@ Function TestPath ([parameter(Mandatory = $true)][string]$BackupPath) {
 }
 # This function Find Path Backup
 Function GetBackupFiles {
+
+    <# Script for create table
+    USE [tempdb]
+    GO
+
+    SET ANSI_NULLS ON
+    GO
+
+    SET QUOTED_IDENTIFIER ON
+    GO
+
+    CREATE TABLE [dbo].[BackupPathResult](
+        [ExecutionId] [int] NULL,
+        [ID] [int] NULL,
+        [DatabaseName] [nvarchar](max) NULL,
+        [FILEPATH] [nvarchar](max) NULL,
+        [BackupType] [nvarchar](max) NULL,
+        [FileName] [nvarchar](max) NULL,
+        [UNCPath] [nvarchar](max) NULL,
+        [Position] [int] NULL,
+        [MediaSetId] [int] NULL,
+        [BackupStartTime] [datetime2](7) NULL,
+        [BackupSourcePath] [nvarchar](max) NULL,
+        [InstanceName] [nvarchar](max) NULL,
+        [myCompleteFullCommand] [nvarchar](max) NULL
+    ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+    GO
+
+    --------------------------
+    USE [tempdb]
+    GO
+
+   SET ANSI_NULLS ON
+    GO
+
+    SET QUOTED_IDENTIFIER ON
+    GO
+
+    CREATE TABLE [dbo].[FileListInfo](
+        [LogicalName] [nvarchar](max) NULL,
+        [Type] [nvarchar](max) NULL,
+        [PhysicalName] [nvarchar](max) NULL
+    ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+    GO
+
+
+    #>
     Param (
         [parameter (Mandatory = $True)][string]$InstanceName,
         [parameter (Mandatory = $True)][string]$DatabaseName,
@@ -240,7 +287,6 @@ Function GetBackupFiles {
     $myResultQuery = Invoke-Sqlcmd -ServerInstance $InstanceName -Database $DatabaseName -Query $myFullBackupQuery -OutputSqlErrors $true -OutputAs DataTables -TrustServerCertificate
     return $myResultQuery
 }
-
 # This function for Restore Command
 Function RestoreFullCommand {
     Param (
@@ -525,6 +571,43 @@ Function CheckDB {
 }
 # Save Result in to the table 
 Function SaveResult {
+    # script for create table 
+    <#
+        USE [SqlDeep]
+    GO
+
+    /****** Object:  Table [dbo].[BackupTestResult]    Script Date: 11/8/2023 11:26:49 ******/
+    SET ANSI_NULLS ON
+    GO
+
+    SET QUOTED_IDENTIFIER ON
+    GO
+
+    CREATE TABLE [dbo].[BackupTestResult](
+        [Id] [BIGINT] IDENTITY(1,1) NOT NULL,
+        [InstanceName] [NVARCHAR](128) NOT NULL,
+        [DatabaseName] [NVARCHAR](128) NOT NULL,
+        [TestResult] [INT] NOT NULL,
+        [BackupRestoredTime] [DATETIME] NOT NULL,
+        [BackupStartTime] [DATETIME] NULL,
+        [LogFilePath] [NVARCHAR](255) NULL,
+        [SysRowVersion] [TIMESTAMP] NOT NULL,
+        [TestResultDescription] [NCHAR](50) NULL,
+        [HashValue]  AS (BINARY_CHECKSUM([InstanceName],[DatabaseName])),
+        [FinishTime] [DATETIME] NULL,
+    CONSTRAINT [PK_dbo.ResultCheckBackup] PRIMARY KEY CLUSTERED 
+    (
+        [Id] ASC
+    )WITH (PAD_INDEX = ON, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 100, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+    ) ON [PRIMARY]
+    GO
+
+    ALTER TABLE [dbo].[BackupTestResult] ADD  CONSTRAINT [DF_BackupTestResult_FinishDate]  DEFAULT (GETDATE()) FOR [FinishTime]
+    GO
+
+
+
+    #>
     Param (
         [parameter(Mandatory = $true)][string]$BackupInstance,
         [parameter(Mandatory = $true)][string]$DatabaseName,
